@@ -1,0 +1,217 @@
+Đặt IP cho các pc
+PC vlan 10: 192.168.10.2 255.255.255.0 192.168.10.1
+PC vlan 20: 192.168.20.2 255.255.255.0 192.168.20.1
+PC vlan 30: 192.168.30.2 255.255.255.0 192.168.30.1
+PC vlan 40: 192.168.40.2 255.255.255.0 192.168.40.1
+PC mạng 10.0.0.0: 10.0.0.2 255.255.255.0 10.0.0.1
+
+
+1. Cấu hình etherchannel cho 2 switch và tạo vlan
+Cấu hình switch 1:
+enable
+configure terminal
+
+! --- Bước 1: Tạo các VLAN ---
+vlan 10
+vlan 20
+vlan 30
+vlan 40
+exit
+
+! --- Bước 2: Cấu hình EtherChannel (Port-Channel 1) ---
+! Chọn 2 cổng nối sang Switch kia
+interface range fastEthernet 0/1-2
+ channel-group 1 mode active
+ no shutdown
+ exit
+
+! Cấu hình đường Trunk cho Port-Channel vừa tạo
+interface port-channel 1
+ switchport mode trunk
+ switchport trunk allowed vlan 10,20,30,40
+ ! (Lệnh dưới là tuỳ chọn nếu muốn cho phép native vlan đi qua)
+ switchport trunk native vlan 1
+ exit
+
+! --- Bước 3: Gán VLAN cho các PC (Access Port) ---
+! PC0 - Cổng Fa0/3 - VLAN 10
+interface fastEthernet 0/3
+ switchport mode access
+ switchport access vlan 10
+ no shutdown
+ exit
+
+! PC1 - Cổng Fa0/4 - VLAN 20
+interface fastEthernet 0/4
+ switchport mode access
+ switchport access vlan 20
+ no shutdown
+ exit
+
+end
+write memory
+
+Cấu hình switch 2.
+enable
+configure terminal
+
+! --- Bước 1: Tạo các VLAN (Cần tạo đủ để Trunk hiểu) ---
+vlan 10
+vlan 20
+vlan 30
+vlan 40
+exit
+
+! --- Bước 2: Cấu hình EtherChannel (Port-Channel 1) ---
+interface range fastEthernet 0/1-2
+ channel-group 1 mode active
+ no shutdown
+ exit
+
+interface port-channel 1
+ switchport mode trunk
+ switchport trunk allowed vlan 10,20,30,40
+ exit
+
+! --- Bước 3: Gán VLAN cho các PC (Access Port) ---
+! PC2 - Cổng Fa0/3 - VLAN 30
+interface fastEthernet 0/3
+ switchport mode access
+ switchport access vlan 30
+ no shutdown
+ exit
+
+! PC3 - Cổng Fa0/4 - VLAN 40
+interface fastEthernet 0/4
+ switchport mode access
+ switchport access vlan 40
+ no shutdown
+ exit
+
+end
+write memory
+
+2. Cấu hình ping giữa các router với nhau
+Cấu hình Switch:
+! Tại Switch Trái
+enable
+configure terminal
+
+interface GigabitEthernet0/1
+ switchport mode trunk
+ switchport trunk allowed vlan 10,20,30,40
+ no shutdown
+ exit
+
+Cấu hình router:
+! Tại Router
+enable
+configure terminal
+
+! 1. Bật cổng vật lý lên (QUAN TRỌNG: Mặc định nó bị tắt/màu đỏ)
+interface GigabitEthernet0/0/0
+ no shutdown
+ exit
+
+! 2. Cấu hình cho VLAN 10
+interface GigabitEthernet0/0/0.10
+ encapsulation dot1Q 10
+ ip address 192.168.10.1 255.255.255.0
+ exit
+
+! 3. Cấu hình cho VLAN 20
+interface GigabitEthernet0/0/0.20
+ encapsulation dot1Q 20
+ ip address 192.168.20.1 255.255.255.0
+ exit
+
+! 4. Cấu hình cho VLAN 30
+interface GigabitEthernet0/0/0.30
+ encapsulation dot1Q 30
+ ip address 192.168.30.1 255.255.255.0
+ exit
+
+! 5. Cấu hình cho VLAN 40
+interface GigabitEthernet0/0/0.40
+ encapsulation dot1Q 40
+ ip address 192.168.40.1 255.255.255.0
+ exit
+
+end
+write memory
+
+3. Cấu hình dhcpv4
+Cấu hình router: 
+enable
+configure terminal
+
+! --- Bước 1: Loại trừ các địa chỉ IP Gateway (Để DHCP không cấp trùng) ---
+ip dhcp excluded-address 192.168.10.1
+ip dhcp excluded-address 192.168.20.1
+ip dhcp excluded-address 192.168.30.1
+ip dhcp excluded-address 192.168.40.1
+
+! --- Bước 2: Tạo Pool DHCP cho VLAN 10 (KETOAN) ---
+ip dhcp pool POOL_VLAN10
+ network 192.168.10.0 255.255.255.0
+ default-router 192.168.10.1
+ dns-server 8.8.8.8
+ exit
+
+! --- Bước 3: Tạo Pool DHCP cho VLAN 20 (IT) ---
+ip dhcp pool POOL_VLAN20
+ network 192.168.20.0 255.255.255.0
+ default-router 192.168.20.1
+ dns-server 8.8.8.8
+ exit
+
+! --- Bước 4: Tạo Pool DHCP cho VLAN 30 (HR) ---
+ip dhcp pool POOL_VLAN30
+ network 192.168.30.0 255.255.255.0
+ default-router 192.168.30.1
+ dns-server 8.8.8.8
+ exit
+
+! --- Bước 5: Tạo Pool DHCP cho VLAN 40 (SALES) ---
+ip dhcp pool POOL_VLAN40
+ network 192.168.40.0 255.255.255.0
+ default-router 192.168.40.1
+ dns-server 8.8.8.8
+ exit
+
+end
+write memory
+
+4. Cấu hình định tuyến để ping từ mạng 10.0.0.0 đến 4 vlan và ngược lại
+Cấu hình trên router trái:
+!Đặt ip cho cổng ra.
+enable
+conf
+int g0/0/0
+ip address 10.0.0.1 255.255.255.0
+no sh
+exit
+! Cấu hình cổng Serial (WAN) Tự đổi tên cổng se.
+int s0/1/0
+ip address 172.16.250.1 255.255.255.252
+! Có biểu tượng đồng hồ ở dây mới dùng
+clock rate 64000
+no sh
+exit
+
+!Static routing
+ip route 192.168.10.0 255.255.255.0 172.16.250.2
+ip route 192.168.20.0 255.255.255.0 172.16.250.2
+ip route 192.168.30.0 255.255.255.0 172.16.250.2
+ip route 192.168.40.0 255.255.255.0 172.16.250.2
+
+Cấu hình trên router phải:
+en
+conf
+int s0/1/0
+ip address 172.16.250.2 255.255.255.252
+no sh
+exit
+
+!static routing
+ip route 10.0.0.0 255.255.255.0 172.16.250.1
